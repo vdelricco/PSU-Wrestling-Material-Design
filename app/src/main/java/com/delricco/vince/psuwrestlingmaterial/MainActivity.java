@@ -8,12 +8,10 @@ import android.support.v4.app.FragmentPagerAdapter;
 import android.support.v4.view.ViewPager;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
-import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.ViewGroup;
-import android.widget.TextView;
+import android.widget.ListView;
 
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
@@ -27,9 +25,11 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements
+        ContentFragment.OnSectionSelectedListener {
 
     private SectionsPagerAdapter mSectionsPagerAdapter;
+    private NewsAdapter mNewsAdapter;
     private ViewPager mViewPager;
 
     @Override
@@ -47,6 +47,8 @@ public class MainActivity extends AppCompatActivity {
 
         TabLayout tabLayout = (TabLayout) findViewById(R.id.tabs);
         tabLayout.setupWithViewPager(mViewPager);
+
+        mNewsAdapter = new NewsAdapter(getApplicationContext());
     }
 
 
@@ -67,76 +69,81 @@ public class MainActivity extends AppCompatActivity {
         return super.onOptionsItemSelected(item);
     }
 
-    public static class PlaceholderFragment extends Fragment {
+    @Override
+    public void onSectionSelected(int section, View view) {
+        final ContentFragment contentFragment = (ContentFragment) mSectionsPagerAdapter.getItem(
+                section);
 
-        private static final String ARG_SECTION_NUMBER = "section_number";
-
-        public PlaceholderFragment() {
-        }
-
-        public static PlaceholderFragment newInstance(int sectionNumber) {
-            PlaceholderFragment fragment = new PlaceholderFragment();
-            Bundle args = new Bundle();
-            args.putInt(ARG_SECTION_NUMBER, sectionNumber);
-            fragment.setArguments(args);
-            return fragment;
-        }
-
-        @Override
-        public View onCreateView(LayoutInflater inflater, ViewGroup container,
-                Bundle savedInstanceState) {
-            View rootView = inflater.inflate(R.layout.fragment_main, container, false);
-            final TextView textView = (TextView) rootView.findViewById(R.id.section_label);
-
-            int sectionNumber = getArguments().getInt(ARG_SECTION_NUMBER);
-
-            switch (sectionNumber) {
-                case 1:
-                    showNews(textView);
-                    break;
-                default:
-                    textView.setText("Not yet implemented section " + sectionNumber);
-                    break;
-            }
-
-            return rootView;
-        }
-
-        private void showNews(final TextView textView) {
-            String url ="http://www.pennstatewrestlingclub.org/content/news.php";
-
-            // Instantiate the RequestQueue.
-            RequestQueue queue = Volley.newRequestQueue(getActivity());
-
-            // Request a string response from the provided URL.
-            StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
-                    new Response.Listener<String>() {
-                        @Override
-                        public void onResponse(String response) {
-                            Document html = Jsoup.parse(response);
-                            Elements elements = html.select("a");
-                            StringBuilder builder = new StringBuilder();
-                            for (Element element : elements) {
-                                if (element.attr("href").startsWith("read_news")) {
-                                    System.out.println(element.ownText());
-                                    builder.append(element.ownText() + "\n" + "\n");
-                                }
-                            }
-                            builder.append("\n");
-                            textView.setText(builder.toString());
-                        }
-                    }, new Response.ErrorListener() {
-                @Override
-                public void onErrorResponse(VolleyError error) {
-                    textView.setText("That didn't work!");
-                }
-            });
-            // Add the request to the RequestQueue.
-            queue.add(stringRequest);
+        switch (section) {
+            case 1:
+                ListView listView = (ListView) view.findViewById(R.id.content_list);
+                listView.setAdapter(mNewsAdapter);
+                listView.setOnItemClickListener(mNewsAdapter);
+                showNews(view);
+                break;
+            default:
+                break;
         }
     }
 
-    public class SectionsPagerAdapter extends FragmentPagerAdapter {
+    private void showNews(final View view) {
+        String url = "http://www.pennstatewrestlingclub.org/content/news.php";
+
+        // Instantiate the RequestQueue.
+        RequestQueue queue = Volley.newRequestQueue(this);
+
+        // Request a string response from the provided URL.
+        StringRequest stringRequest = new StringRequest(Request.Method.GET, url,
+                new Response.Listener<String>() {
+                    @Override
+                    public void onResponse(String response) {
+                        Document html = Jsoup.parse(response);
+
+                        Elements tables = html.select("table");
+
+                        Element newsTable = null;
+
+                        for (Element table : tables) {
+                            if (table.select("th") != null) {
+                                newsTable = table;
+                            }
+                        }
+
+                        if (newsTable != null) {
+                            Elements newsTableRows = newsTable.select("tr");
+                            for (Element row : newsTableRows) {
+                                String title;
+                                String date;
+                                int id;
+
+                                if (row.select("a").size() > 0) {
+                                    Element a = row.select("a").get(0);
+
+                                    title = a.ownText();
+
+                                    String link = a.attr("href");
+                                    id = Integer.parseInt(
+                                            link.substring(link.indexOf("=") + 1, link.length()));
+
+                                    date = row.select("td").get(1).ownText();
+
+                                    mNewsAdapter.addItem(new News(title, date, id));
+                                }
+                            }
+                        }
+
+                    }
+                }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                mNewsAdapter.addItem(new News("Error!", error.toString(), 0));
+            }
+        });
+        // Add the request to the RequestQueue.
+        queue.add(stringRequest);
+    }
+
+    private class SectionsPagerAdapter extends FragmentPagerAdapter {
 
         public SectionsPagerAdapter(FragmentManager fm) {
             super(fm);
@@ -145,8 +152,8 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public Fragment getItem(int position) {
             // getItem is called to instantiate the fragment for the given page.
-            // Return a PlaceholderFragment (defined as a static inner class below).
-            return PlaceholderFragment.newInstance(position + 1);
+            // Return a ContentFragment
+            return ContentFragment.newInstance(position + 1);
         }
 
         @Override
